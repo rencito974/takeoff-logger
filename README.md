@@ -30,6 +30,17 @@ py takeoff_logger.py
 
 Add `--out FOLDER` to save runs somewhere other than `takeoff_data`, or `--dll PATH` to use a different SimConnect.dll, such as the one from the MSFS 2024 SDK.
 
+### Shortcuts
+
+Instead of typing a command, double-click one of these. The window's title says where the runs are going.
+
+- **Check sim connection.bat**: the live readout (`--check`)
+- **Record IA runs.bat**: saves to `takeoff_data`
+- **Record EE temperature runs.bat**: saves to `ee_temperature`
+- **Record EE altitude runs.bat**: saves to `ee_altitude`
+
+When you stop with Ctrl+C, Windows may ask "Terminate batch job (Y/N)?". Either answer is fine, because finished runs are already saved.
+
 ### How a run is detected
 
 ```mermaid
