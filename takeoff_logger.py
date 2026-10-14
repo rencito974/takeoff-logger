@@ -248,7 +248,7 @@ class TakeoffRecorder:
                 if missing:
                     print(f"Note: {self.summary_path} was started by an older version of this script, so it "
                           f"won't get the new columns ({', '.join(missing)}). Each run_NNN.csv still has them.")
-        numbers =[int(p.stem[4:]) for p in self.out_dir.glob("run_*.csv") if p.stem[4:].isdigit()]
+        numbers = [int(p.stem[4:]) for p in self.out_dir.glob("run_*.csv") if p.stem[4:].isdigit()]
         self.run_number = max(numbers, default=0) + 1
         self.state = "WAITING"
         self.frames = []
