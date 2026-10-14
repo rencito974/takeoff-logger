@@ -1,7 +1,8 @@
 r"""
 takeoff_logger.py - records takeoff runs in Microsoft Flight Simulator (2020/2024) via SimConnect
 ===============================================================================================
-Built for an investigation of how aircraft mass affects the takeoff ground roll.
+Built for an investigation of how aircraft mass affects the takeoff ground roll (the IA).
+EE runs are recorded with ee_logger.py, which builds on this script.
 
 SETUP (Windows, 64-bit Python 3):
     py -m pip install SimConnect
@@ -10,7 +11,7 @@ USE (load into a flight and sit in the cockpit FIRST, then run):
     py takeoff_logger.py --check      live readout, to test the connection
     py takeoff_logger.py              record takeoff runs  (Ctrl+C to quit)
     py takeoff_logger.py --dll "C:\path\to\SimConnect.dll"    use a different SimConnect.dll
-    py takeoff_logger.py --out ee_altitude    save the CSVs in another folder instead of takeoff_data
+    py takeoff_logger.py --out other_folder    save the CSVs somewhere other than the IA folder
 
 HOW A RUN IS DETECTED
     1. Stop on the runway, hold the brakes, FULL throttle   -> "ARMED"
@@ -22,7 +23,7 @@ HOW A RUN IS DETECTED
     Pulling the throttle below 80 % during the roll cancels the run.
     Don't pause the sim during a run.
 
-OUTPUT (folder "takeoff_data" next to this script)
+OUTPUT (folder "IA" next to this script)
     run_001.csv, run_002.csv ...   every simulator frame of each run
     runs_summary.csv               one row per run: mass, ground roll, liftoff values, conditions
     Tip: if Excel puts everything in one column, use Data > From Text/CSV, or open it in Google Sheets.
@@ -233,18 +234,19 @@ def _fmt(x):
 class TakeoffRecorder:
     """Watches the frame stream and cuts out individual takeoff runs."""
 
-    def __init__(self, out_dir):
+    def __init__(self, out_dir, columns=SUMMARY_COLUMNS):
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.summary_path = self.out_dir / "runs_summary.csv"
-        self.summary_columns = SUMMARY_COLUMNS
+        self.columns = columns                 # header for a new runs_summary.csv
+        self.summary_columns = columns         # columns actually written (an older file keeps its own)
         if self.summary_path.exists() and self.summary_path.stat().st_size > 0:
             with open(self.summary_path, newline="", encoding="utf-8-sig") as fh:
                 header = next(csv.reader(fh), [])
             # A summary started by an older version has fewer columns: keep appending in its layout
-            if header and set(header) <= set(SUMMARY_COLUMNS):
+            if header and set(header) <= set(columns):
                 self.summary_columns = header
-                missing = [c for c in SUMMARY_COLUMNS if c not in header]
+                missing = [c for c in columns if c not in header]
                 if missing:
                     print(f"Note: {self.summary_path} was started by an older version of this script, so it "
                           f"won't get the new columns ({', '.join(missing)}). Each run_NNN.csv still has them.")
@@ -358,12 +360,13 @@ class TakeoffRecorder:
             "elevation_m": round(f0["ground_alt_m"], 1),
             "mixture_pct": round(f0["mixture_pct"], 1),
         }
+        s = self.finish_summary(s)
         new_file = not self.summary_path.exists() or self.summary_path.stat().st_size == 0
         with open(self.summary_path, "a", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             if new_file:
-                self.summary_columns = SUMMARY_COLUMNS
-                writer.writerow(SUMMARY_COLUMNS)
+                self.summary_columns = self.columns
+                writer.writerow(self.columns)
             writer.writerow([_fmt(s.get(c, "")) for c in self.summary_columns])
 
         print(f"Run {self.run_number:03d} saved: mass {s['mass_kg']:.1f} kg | ground roll "
@@ -376,8 +379,17 @@ class TakeoffRecorder:
             print("  NOTE: it bounced before lifting off for good - consider redoing this run.")
         if s["flaps_moved"]:
             print("  NOTE: the flaps moved during the roll.")
+        self.after_save(s)
         self.run_number += 1
         self.state, self.frames = "WAITING", []
+
+    # Hooks for scripts built on this one (ee_logger.py)
+    def finish_summary(self, s):
+        """Add or change columns in a run's summary row before it's written."""
+        return s
+
+    def after_save(self, s):
+        """Called once a run and its summary row are saved."""
 
 
 def check(feed, frame_queue):
@@ -398,12 +410,13 @@ def check(feed, frame_queue):
                   f"wind {f['wind_kt']:.1f} kt (max {max_wind:.1f}) | {rate:.0f} samples/s")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Record MSFS takeoff runs through SimConnect.")
+def main(recorder_class=TakeoffRecorder, folder="IA",
+         description="Record IA takeoff runs (mass vs ground roll) through SimConnect."):
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--check", action="store_true", help="only show live values (connection test)")
     parser.add_argument("--dll", help="path to another SimConnect.dll, e.g. the one in the MSFS 2024 SDK")
-    parser.add_argument("--out", default=str(Path(__file__).resolve().parent / "takeoff_data"),
-                        help="folder for the CSV files (default: takeoff_data next to this script)")
+    parser.add_argument("--out", default=str(Path(__file__).resolve().parent / folder),
+                        help=f"folder for the CSV files (default: {folder} next to this script)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
@@ -424,7 +437,7 @@ def main():
         if args.check:
             check(feed, frame_queue)
         else:
-            recorder = TakeoffRecorder(args.out)
+            recorder = recorder_class(args.out)
             print(f"Saving runs to: {recorder.out_dir}")
             print("Line up, hold the brakes, full throttle -> release the brakes -> take off.  Ctrl+C to quit.")
             for t, f in frames(feed, frame_queue):

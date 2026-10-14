@@ -2,7 +2,10 @@
 
 Records takeoff runs in Microsoft Flight Simulator (2020 and 2024) through SimConnect. Every run is saved frame by frame, plus one summary row with the ground roll, liftoff speeds and air conditions.
 
-Built for an investigation of how aircraft mass affects the takeoff ground roll.
+Two investigations use it, and each one has its own folder:
+
+- **IA** in `IA/`: how aircraft mass affects the takeoff ground roll
+- **EE** in `EE/`: how air density, changed through temperature and altitude, affects the takeoff
 
 ## Setup
 
@@ -14,32 +17,29 @@ py -m pip install SimConnect
 
 ## Recording runs
 
-Load into a flight and sit in the cockpit first, then run these from this folder.
+Load into a flight and sit in the cockpit first, then double-click one of these. The window's title says where the runs are going.
 
-**Test the connection.** Shows a live readout. Sit still for 2 minutes: the wind max should stay at 0.0.
+- **Check sim connection.bat**: a live readout to test the connection. Sit still for 2 minutes: the wind max should stay at 0.0.
+- **Record IA runs.bat**: records IA runs into `IA/`
+- **Record EE runs.bat**: records EE runs into `EE/` and sorts each one into its series
+
+Stop with Ctrl+C. Windows may then ask "Terminate batch job (Y/N)?". Either answer is fine, because finished runs are already saved.
+
+The shortcuts run these commands, which also work typed into a terminal in this folder:
 
 ```
 py takeoff_logger.py --check
 ```
 
-**Record runs.** Keeps recording takeoffs until you press Ctrl+C.
-
 ```
 py takeoff_logger.py
 ```
 
-Add `--out FOLDER` to save runs somewhere other than `takeoff_data`, or `--dll PATH` to use a different SimConnect.dll, such as the one from the MSFS 2024 SDK.
+```
+py ee_logger.py
+```
 
-### Shortcuts
-
-Instead of typing a command, double-click one of these. The window's title says where the runs are going.
-
-- **Check sim connection.bat**: the live readout (`--check`)
-- **Record IA runs.bat**: saves to `takeoff_data`
-- **Record EE temperature runs.bat**: saves to `ee_temperature`
-- **Record EE altitude runs.bat**: saves to `ee_altitude`
-
-When you stop with Ctrl+C, Windows may ask "Terminate batch job (Y/N)?". Either answer is fine, because finished runs are already saved.
+Add `--out FOLDER` to save somewhere else, or `--dll PATH` to use a different SimConnect.dll, such as the one from the MSFS 2024 SDK.
 
 ### How a run is detected
 
@@ -58,14 +58,40 @@ flowchart TD
 
 Don't pause the sim during a run. After a run is saved or cancelled, the logger waits for the next one.
 
+## EE series
+
+`ee_logger.py` labels every EE run using the elevation and temperature it measured:
+
+| Series | Airport | Temperature |
+| --- | --- | --- |
+| `temperature` | The baseline airport (below 100 m, e.g. Ezeiza) | Any |
+| `altitude` | A higher airport | The altitude-series temperature |
+| `both` | The baseline airport | The altitude-series temperature, so it's the sea-level point of both series |
+| `neither` | A higher airport | Anything else. The window warns you to fix it and redo the run |
+
+The altitude-series temperature is 15 °C (±1 °C) unless you change it at the top of `ee_logger.py`:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `BASELINE_MAX_ELEVATION_M` | 100 | Runs below this elevation count as the baseline airport |
+| `ALTITUDE_SERIES_TEMP_C` | 15 | The temperature you hold fixed for the altitude series |
+| `TEMP_TOLERANCE_C` | 1 | How far a run's temperature can be from that and still count |
+
+`EE/` also gets two extra files, rebuilt after every run and whenever the script starts:
+
+- `temperature_series.csv`: the `temperature` and `both` runs, coldest first
+- `altitude_series.csv`: the `altitude` and `both` runs, lowest first
+
+To drop a bad run, delete its row from `EE/runs_summary.csv`. It disappears from the series files the next time you start the script.
+
 ## Output
 
-Runs go to `takeoff_data/` next to the script, or to the `--out` folder. Numbering carries on from the highest run already there.
+Each folder gets:
 
 - `runs_summary.csv`: one row per run
 - `run_001.csv`, `run_002.csv`, …: every simulator frame of one run, from brake release to 0.5 s after liftoff
 
-If Excel puts everything in one column, use **Data → From Text/CSV**, or open the file in Google Sheets.
+Numbering carries on from the highest run already in the folder. If Excel puts everything in one column, use **Data → From Text/CSV**, or open the file in Google Sheets.
 
 ### runs_summary.csv
 
@@ -88,10 +114,11 @@ If Excel puts everything in one column, use **Data → From Text/CSV**, or open 
 | `time_source` | `sim clock`, or `pc clock` if the sim's clock didn't tick every frame |
 | `elevation_m` | Ground elevation at the start point |
 | `mixture_pct` | Mixture lever position at brake release |
+| `series`, `series_note` | EE only: the run's series, and why when it's `neither` |
 
 Liftoff is taken as halfway between the last frame on the ground and the first frame in the air.
 
-`elevation_m` and `mixture_pct` were added later. A summary file started by an older version keeps its original columns, so new runs still line up with the old ones.
+`elevation_m` and `mixture_pct` were added later. A summary file started by an older version, like the one in `IA/`, keeps its original columns, so new runs still line up with the old ones.
 
 ### run_NNN.csv
 
@@ -117,7 +144,7 @@ One row per simulator frame.
 
 ## Settings
 
-The thresholds sit at the top of `takeoff_logger.py`:
+The recording thresholds sit at the top of `takeoff_logger.py` and apply to both investigations:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
