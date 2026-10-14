@@ -10,10 +10,12 @@ USE (load into a flight and sit in the cockpit FIRST, then run):
     py takeoff_logger.py --check      live readout, to test the connection
     py takeoff_logger.py              record takeoff runs  (Ctrl+C to quit)
     py takeoff_logger.py --dll "C:\path\to\SimConnect.dll"    use a different SimConnect.dll
+    py takeoff_logger.py --out ee_altitude    save the CSVs in another folder instead of takeoff_data
 
 HOW A RUN IS DETECTED
     1. Stop on the runway, hold the brakes, FULL throttle   -> "ARMED"
-       (the ARMED line shows mass, flap angle, trim and wind - check them before you go)
+       (the ARMED line shows mass, flap angle, trim, wind, temperature, elevation and mixture -
+        check them before you go)
     2. Release the brakes: recording starts once ground speed passes 1 kt
     3. Take off: the run is saved once the plane has stayed airborne for 0.5 s
        (touching back down before that counts as a bounce and the run carries on)
@@ -67,11 +69,13 @@ VARS = [
     ("on_ground",     "SIM ON GROUND",                         "Bool"),
     ("lat_deg",       "PLANE LATITUDE",                        "Degrees"),
     ("lon_deg",       "PLANE LONGITUDE",                       "Degrees"),
+    ("ground_alt_m",  "GROUND ALTITUDE",                       "Meters"),
     ("gs_kt",         "GROUND VELOCITY",                       "Knots"),
     ("ias_kt",        "AIRSPEED INDICATED",                    "Knots"),
     ("tas_kt",        "AIRSPEED TRUE",                         "Knots"),
     ("throttle_pct",  "GENERAL ENG THROTTLE LEVER POSITION:1", "Percent"),
     ("rpm",           "GENERAL ENG RPM:1",                     "Rpm"),
+    ("mixture_pct",   "GENERAL ENG MIXTURE LEVER POSITION:1",  "Percent"),
     ("pitch_raw_deg", "PLANE PITCH DEGREES",                   "Degrees"),
     ("aoa_deg",       "INCIDENCE ALPHA",                       "Degrees"),
     ("flaps_index",   "FLAPS HANDLE INDEX",                    "Number"),
@@ -86,12 +90,14 @@ COLUMNS = [column for column, _, _ in VARS]
 
 FRAME_COLUMNS = ["t_s", "dist_m", "on_ground", "gs_kt", "ias_kt", "tas_kt", "throttle_pct", "rpm",
                  "pitch_deg", "aoa_deg", "flaps_index", "flaps_deg", "trim_pct", "weight_lb", "temp_c", "pressure_inhg",
-                 "wind_kt", "lat_deg", "lon_deg", "abs_time_s"]
+                 "wind_kt", "lat_deg", "lon_deg", "abs_time_s",
+                 "ground_alt_m", "mixture_pct"]     # added later: kept at the end so older files line up
 
 SUMMARY_COLUMNS = ["run", "recorded_at", "mass_lb", "mass_kg", "ground_roll_m", "ground_roll_check_m",
                    "roll_time_s", "liftoff_ias_kt", "liftoff_tas_kt", "liftoff_gs_kt", "liftoff_aoa_deg",
                    "liftoff_pitch_deg", "flaps_deg", "trim_pct", "max_rpm", "temp_c", "pressure_hpa",
-                   "air_density_kg_m3", "max_wind_kt", "bounced", "flaps_moved", "time_source", "file"]
+                   "air_density_kg_m3", "max_wind_kt", "bounced", "flaps_moved", "time_source", "file",
+                   "elevation_m", "mixture_pct"]    # added later, same reason
 
 KT_TO_MS = 0.514444         # knots -> m/s
 LB_TO_KG = 0.45359237       # pounds -> kg
@@ -231,7 +237,18 @@ class TakeoffRecorder:
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.summary_path = self.out_dir / "runs_summary.csv"
-        numbers = [int(p.stem[4:]) for p in self.out_dir.glob("run_*.csv") if p.stem[4:].isdigit()]
+        self.summary_columns = SUMMARY_COLUMNS
+        if self.summary_path.exists() and self.summary_path.stat().st_size > 0:
+            with open(self.summary_path, newline="", encoding="utf-8-sig") as fh:
+                header = next(csv.reader(fh), [])
+            # A summary started by an older version has fewer columns: keep appending in its layout
+            if header and set(header) <= set(SUMMARY_COLUMNS):
+                self.summary_columns = header
+                missing = [c for c in SUMMARY_COLUMNS if c not in header]
+                if missing:
+                    print(f"Note: {self.summary_path} was started by an older version of this script, so it "
+                          f"won't get the new columns ({', '.join(missing)}). Each run_NNN.csv still has them.")
+        numbers =[int(p.stem[4:]) for p in self.out_dir.glob("run_*.csv") if p.stem[4:].isdigit()]
         self.run_number = max(numbers, default=0) + 1
         self.state = "WAITING"
         self.frames = []
@@ -246,7 +263,8 @@ class TakeoffRecorder:
                 self.state, self.still = "ARMED", (t, f)
                 print(f"\nRun {self.run_number:03d} ARMED | mass {f['weight_lb']:.0f} lb "
                       f"({f['weight_lb'] * LB_TO_KG:.1f} kg) | flaps {f['flaps_deg']:.1f} deg | "
-                      f"trim {f['trim_pct']:+.0f}% | wind {f['wind_kt']:.1f} kt")
+                      f"trim {f['trim_pct']:+.0f}% | wind {f['wind_kt']:.1f} kt | {f['temp_c']:.1f} C | "
+                      f"elevation {f['ground_alt_m']:.0f} m | mixture {f['mixture_pct']:.0f}%")
                 if abs(f["flaps_deg"] - EXPECTED_FLAPS_DEG) > 1.0:
                     print(f"  CHECK: flaps are at {f['flaps_deg']:.1f} deg, not {EXPECTED_FLAPS_DEG:.0f} "
                           "(if they're still moving, wait before releasing the brakes)")
@@ -337,13 +355,16 @@ class TakeoffRecorder:
             "flaps_moved": max(f["flaps_deg"] for f in on_runway) - min(f["flaps_deg"] for f in on_runway) > 1.0,
             "time_source": source,
             "file": name,
+            "elevation_m": round(f0["ground_alt_m"], 1),
+            "mixture_pct": round(f0["mixture_pct"], 1),
         }
-        new_file = not self.summary_path.exists()
+        new_file = not self.summary_path.exists() or self.summary_path.stat().st_size == 0
         with open(self.summary_path, "a", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             if new_file:
+                self.summary_columns = SUMMARY_COLUMNS
                 writer.writerow(SUMMARY_COLUMNS)
-            writer.writerow([_fmt(s[c]) for c in SUMMARY_COLUMNS])
+            writer.writerow([_fmt(s.get(c, "")) for c in self.summary_columns])
 
         print(f"Run {self.run_number:03d} saved: mass {s['mass_kg']:.1f} kg | ground roll "
               f"{s['ground_roll_m']:.1f} m (check {s['ground_roll_check_m']:.1f} m) | liftoff "
@@ -373,6 +394,7 @@ def check(feed, frame_queue):
                   f"GS {f['gs_kt']:5.1f} kt | IAS {f['ias_kt']:5.1f} kt | throttle {f['throttle_pct']:3.0f}% | "
                   f"{f['rpm']:4.0f} rpm | pitch {f['pitch_deg']:5.1f} deg | AoA {f['aoa_deg']:5.1f} deg | "
                   f"flaps {f['flaps_deg']:.1f} deg | trim {f['trim_pct']:+.0f}% | {f['temp_c']:.1f} C {f['pressure_inhg'] * INHG_TO_PA / 100:.1f} hPa | "
+                  f"elevation {f['ground_alt_m']:.0f} m | mixture {f['mixture_pct']:.0f}% | "
                   f"wind {f['wind_kt']:.1f} kt (max {max_wind:.1f}) | {rate:.0f} samples/s")
 
 

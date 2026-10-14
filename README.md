@@ -41,7 +41,7 @@ flowchart TD
     R -.->|"throttle below 80%,<br/>or no liftoff after 120 s"| C["Cancelled, nothing saved"]
 ```
 
-1. Stop on the runway, hold the brakes and go to full throttle. The logger prints an **ARMED** line with the mass, flap angle, trim and wind: check them before you go.
+1. Stop on the runway, hold the brakes and go to full throttle. The logger prints an **ARMED** line with the mass, flap angle, trim, wind, temperature, elevation and mixture: check them before you go.
 2. Release the brakes. Recording starts once ground speed passes 1 kt.
 3. Take off. The run is saved once the plane has stayed airborne for 0.5 s. Touching back down before that counts as a bounce: the run carries on and its `bounced` column says `yes`.
 
@@ -75,8 +75,12 @@ If Excel puts everything in one column, use **Data → From Text/CSV**, or open 
 | `bounced` | `yes` if it touched back down before lifting off for good |
 | `flaps_moved` | `yes` if the flaps moved more than 1° during the roll |
 | `time_source` | `sim clock`, or `pc clock` if the sim's clock didn't tick every frame |
+| `elevation_m` | Ground elevation at the start point |
+| `mixture_pct` | Mixture lever position at brake release |
 
 Liftoff is taken as halfway between the last frame on the ground and the first frame in the air.
+
+`elevation_m` and `mixture_pct` were added later. A summary file started by an older version keeps its original columns, so new runs still line up with the old ones.
 
 ### run_NNN.csv
 
@@ -97,6 +101,8 @@ One row per simulator frame.
 | `wind_kt` | Wind speed |
 | `lat_deg`, `lon_deg` | Aircraft position |
 | `abs_time_s` | The simulator's absolute time |
+| `ground_alt_m` | Ground elevation under the aircraft |
+| `mixture_pct` | Mixture lever position |
 
 ## Settings
 
