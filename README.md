@@ -22,6 +22,7 @@ Load into a flight and sit in the cockpit first, then double-click one of these.
 - **Check sim connection.bat**: a live readout to test the connection. Sit still for 2 minutes: the wind max should stay at 0.0.
 - **Record IA runs.bat**: records IA runs into `IA/`
 - **Record EE runs.bat**: records EE runs into `EE/` and sorts each one into its series
+- **Record EE auto runs.bat**: flies 3 EE runs by itself to 60 KIAS and records them into `EE/` (see [EE auto runs](#ee-auto-runs))
 
 Stop with Ctrl+C. Windows may then ask "Terminate batch job (Y/N)?". Either answer is fine, because finished runs are already saved.
 
@@ -37,6 +38,10 @@ py takeoff_logger.py
 
 ```
 py ee_logger.py
+```
+
+```
+py ee_auto.py
 ```
 
 Add `--out FOLDER` to save somewhere else, or `--dll PATH` to use a different SimConnect.dll, such as the one from the MSFS 2024 SDK.
@@ -87,6 +92,36 @@ During every EE run the logger beeps once when the indicated airspeed reaches 55
 
 To drop a bad run, delete its row from `EE/runs_summary.csv`. It disappears from the series files the next time you start the script.
 
+## EE auto runs
+
+`ee_auto.py` drives the sim through SimConnect, so every run starts the same way and there's no rotation technique in it. The plane never lifts off: each run ends at 60 KIAS, and the summary records how far it took to reach 55 KIAS instead of a ground roll.
+
+Load into the flight, stop at the start of the runway with the engine running, set the weather, then start **Record EE auto runs.bat** (or `py ee_auto.py`, `--runs N` for N runs instead of 3). It then:
+
+1. Puts 159 lb in each of the four seats and fills both wing tanks to 25.7 gal, which is what the sim's own "full fuel" loads. The mass has to read 2539 ± 2 lb, or it stops and says what's loaded.
+2. Saves where the plane is standing as the start point.
+3. Before each run, puts the plane back at the start point, sets the parking brake, flaps 10° and trim 13.6%, goes to full throttle and waits 3 s for the RPM to settle.
+4. Checks the mass, flaps and wind (0.0 kt). If anything is off, it stops and says what's wrong instead of running.
+5. Releases the parking brake and records every frame exactly like the normal logger.
+6. At 60 KIAS it sets the throttle to idle and the parking brake on, and saves the run. After the last run it puts the plane back at the start point.
+
+The weather isn't set by the script. MSFS 2024 doesn't let SimConnect change it: its SimConnect weather functions are deprecated, and the ambient temperature and wind variables can't be written. Pick the weather preset by hand as for manual runs.
+
+Auto runs go into `EE/` with the same numbering, the same `run_NNN.csv` columns and the same series sorting as manual runs. Their `mode` column says `auto`, and the liftoff columns (and `bounced`) stay empty.
+
+Every time `ee_auto.py` starts, it fills in the four new columns for runs that don't have them yet, from their `run_NNN.csv`. Manual runs saved by `ee_logger.py` leave these columns empty, so `py ee_auto.py --fill` fills them in without connecting to the sim. Values already in the file are never changed.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `RUNS` | 3 | Runs in a row, unless `--runs` says otherwise |
+| `TARGET_MASS_LB` | 2539 | The mass every run must have (± `MASS_TOLERANCE_LB`, 2) |
+| `SEAT_WEIGHT_LB` | 159 | Weight in each of the four seats |
+| `FULL_TANK_GAL` | 25.7 | Fuel in each wing tank |
+| `TRIM_PCT` | 13.6 | Elevator trim, as in the manual runs |
+| `RUN_UP_S` | 3 | Full throttle on the parking brake before each run |
+| `MEASURE_IAS_KT` | 55 | Where the distance and TAS columns are measured |
+| `END_IAS_KT` | 60 | Where the run ends |
+
 ## Output
 
 Each folder gets:
@@ -118,6 +153,10 @@ Numbering carries on from the highest run already in the folder. If Excel puts e
 | `elevation_m` | Ground elevation at the start point |
 | `mixture_pct` | Mixture lever position at brake release |
 | `series`, `series_note` | EE only: the run's series, and why when it's `neither` |
+| `dist_to_55kias_m` | EE only: brake release to where IAS passes 55 kt, interpolated between the frames either side |
+| `check_dist_to_55kias_m` | EE only: the same distance from integrating ground speed over time |
+| `tas_at_55kias_kt` | EE only: true airspeed where IAS passes 55 kt |
+| `mode` | EE only: `auto` (ee_auto.py) or `manual` (ee_logger.py) |
 
 Liftoff is taken as halfway between the last frame on the ground and the first frame in the air.
 
