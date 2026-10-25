@@ -76,6 +76,9 @@ The altitude-series temperature is 15 °C (±1 °C) unless you change it at the 
 | `BASELINE_MAX_ELEVATION_M` | 100 | Runs below this elevation count as the baseline airport |
 | `ALTITUDE_SERIES_TEMP_C` | 15 | The temperature you hold fixed for the altitude series |
 | `TEMP_TOLERANCE_C` | 1 | How far a run's temperature can be from that and still count |
+| `ROTATE_IAS_KT` | 55 | Indicated airspeed at which it beeps during a run, so you know when to rotate |
+
+During every EE run the logger beeps once when the indicated airspeed reaches 55 kt. The beep plays on its own thread, so it doesn't hold up the recording.
 
 `EE/` also gets two extra files, rebuilt after every run and whenever the script starts:
 

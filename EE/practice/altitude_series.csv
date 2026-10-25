@@ -1,0 +1,3 @@
+run,series,recorded_at,mass_lb,mass_kg,ground_roll_m,ground_roll_check_m,roll_time_s,liftoff_ias_kt,liftoff_tas_kt,liftoff_gs_kt,liftoff_aoa_deg,liftoff_pitch_deg,flaps_deg,trim_pct,max_rpm,temp_c,pressure_hpa,air_density_kg_m3,max_wind_kt,bounced,flaps_moved,time_source,file,elevation_m,mixture_pct,series_note
+1,both,2026-10-25T10:50:15,2539,1151.67,735.14,734.41,30.729,77.31,82.56,82.85,4.79,5.17,10,13.6,2567,15,1011.02,1.2223,0,no,no,pc clock,run_001.csv,18.2,100,
+2,both,2026-10-25T10:54:55,2539,1151.67,755.41,754.62,31.204,78.09,83.09,83.56,6.51,7.24,10,13.6,2570,15,1011.03,1.2223,0,no,no,pc clock,run_002.csv,18.2,100,

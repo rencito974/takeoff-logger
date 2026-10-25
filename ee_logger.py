@@ -10,6 +10,9 @@ into the EE folder and every run is labelled with the series it belongs to:
     both          at the baseline airport AND at ALTITUDE_SERIES_TEMP_C: the sea-level point of both series
     neither       at a higher airport but NOT at ALTITUDE_SERIES_TEMP_C - fix the temperature and redo it
 
+During each run it beeps once when the indicated airspeed reaches ROTATE_IAS_KT (55 kt): rotate then.
+The beep plays on its own thread, so the recording never waits for it.
+
 USE (load into a flight and sit in the cockpit FIRST, then run):
     py ee_logger.py              record EE runs  (Ctrl+C to quit)
     py ee_logger.py --check      live readout, to test the connection
@@ -24,6 +27,8 @@ OUTPUT (folder "EE" next to this script)
 """
 
 import csv
+import threading
+import winsound
 
 import takeoff_logger as tl
 
@@ -31,6 +36,9 @@ import takeoff_logger as tl
 BASELINE_MAX_ELEVATION_M = 100.0   # runs below this elevation are at the baseline airport (Ezeiza is about 20 m)
 ALTITUDE_SERIES_TEMP_C = 15.0      # the temperature you hold fixed for the altitude series
 TEMP_TOLERANCE_C = 1.0             # how far a run's temperature can be from that and still count
+ROTATE_IAS_KT = 55.0               # beep once per run when the indicated airspeed reaches this: rotate
+BEEP_HZ = 1000                     # pitch of the rotate beep
+BEEP_MS = 200                      # length of the rotate beep
 
 EE_COLUMNS = ["run", "series"] + [c for c in tl.SUMMARY_COLUMNS if c != "run"] + ["series_note"]
 
@@ -79,14 +87,36 @@ def write_series_files(out_dir):
             print(f"  Couldn't update {name} - is it open in Excel? Close it: it's rebuilt after the next run.")
 
 
+def _beep():
+    try:
+        winsound.Beep(BEEP_HZ, BEEP_MS)
+    except OSError:
+        print("\n  Couldn't play the rotate beep - check the PC's sound output.")
+
+
+def rotate_beep():
+    """Play the rotate beep on its own thread, so the frame loop carries straight on."""
+    threading.Thread(target=_beep, daemon=True).start()
+
+
 class EERecorder(tl.TakeoffRecorder):
     """TakeoffRecorder that labels each run with its EE series and keeps the series files up to date."""
 
     def __init__(self, out_dir):
         super().__init__(out_dir, EE_COLUMNS)
+        self.beeped = False            # rotate beep already played during this run
         print(f"Sorting runs: below {BASELINE_MAX_ELEVATION_M:.0f} m = temperature series, "
               f"altitude series at {ALTITUDE_SERIES_TEMP_C:.0f} C (+/- {TEMP_TOLERANCE_C:.0f} C)")
+        print(f"Beep at {ROTATE_IAS_KT:.0f} KIAS during each run: that's when to rotate.")
         write_series_files(self.out_dir)
+
+    def feed(self, t, f):
+        super().feed(t, f)
+        if self.state != "ROLLING":
+            self.beeped = False
+        elif not self.beeped and f["ias_kt"] >= ROTATE_IAS_KT:
+            self.beeped = True
+            rotate_beep()
 
     def finish_summary(self, s):
         s["series"], s["series_note"] = classify(s["elevation_m"], s["temp_c"])
